@@ -628,6 +628,8 @@ class TestPluginHooks:
         assert "post_api_request" in VALID_HOOKS
         assert "api_request_error" in VALID_HOOKS
         assert "subagent_start" in VALID_HOOKS
+        assert "on_run_start" in VALID_HOOKS
+        assert "on_run_end" in VALID_HOOKS
         assert "transform_terminal_output" in VALID_HOOKS
         assert "transform_tool_result" in VALID_HOOKS
         assert "transform_llm_output" in VALID_HOOKS

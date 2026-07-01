@@ -3941,6 +3941,75 @@ class TestRunConversation:
         assert result["final_response"] == "Final answer"
         assert result["completed"] is True
 
+    def test_run_lifecycle_hooks_fire_exactly_once(self, agent):
+        self._setup_agent(agent)
+        agent.client.chat.completions.create.return_value = _mock_response(
+            content="Final answer", finish_reason="stop"
+        )
+        hook_calls = []
+
+        def _record_hook(name, **kwargs):
+            hook_calls.append((name, kwargs))
+            return []
+
+        with (
+            patch(
+                "hermes_cli.plugins.has_hook",
+                side_effect=lambda name: name in {"on_run_start", "on_run_end"},
+            ),
+            patch("hermes_cli.plugins.invoke_hook", side_effect=_record_hook),
+            patch.object(agent, "_persist_session"),
+            patch.object(agent, "_save_trajectory"),
+            patch.object(agent, "_cleanup_task_resources"),
+        ):
+            result = agent.run_conversation("hello", task_id="task-1")
+
+        run_calls = [
+            call for call in hook_calls if call[0] in {"on_run_start", "on_run_end"}
+        ]
+        assert result["completed"] is True
+        assert [name for name, _ in run_calls] == ["on_run_start", "on_run_end"]
+        start = run_calls[0][1]
+        end = run_calls[1][1]
+        assert start["run_id"] == end["run_id"] == start["turn_id"]
+        assert start["task_id"] == end["task_id"] == "task-1"
+        assert end["outcome"] == "completed"
+        assert end["ended_at"] >= start["started_at"]
+
+    def test_run_lifecycle_end_hook_fires_on_exception(self, agent):
+        hook_calls = []
+
+        def _record_hook(name, **kwargs):
+            hook_calls.append((name, kwargs))
+            return []
+
+        with (
+            patch(
+                "hermes_cli.plugins.has_hook",
+                side_effect=lambda name: name in {"on_run_start", "on_run_end"},
+            ),
+            patch("hermes_cli.plugins.invoke_hook", side_effect=_record_hook),
+            patch(
+                "agent.conversation_loop._run_conversation_impl",
+                side_effect=RuntimeError("boom"),
+            ),
+            pytest.raises(RuntimeError, match="boom"),
+        ):
+            agent.run_conversation("hello", task_id="task-2")
+
+        run_calls = [
+            call for call in hook_calls if call[0] in {"on_run_start", "on_run_end"}
+        ]
+        assert [name for name, _ in run_calls] == ["on_run_start", "on_run_end"]
+        assert run_calls[1][1]["outcome"] == "failed"
+        assert run_calls[1][1]["error_type"] == "RuntimeError"
+
+    def test_run_outcome_classifies_terminal_exceptions(self):
+        from agent.conversation_loop import _run_outcome
+
+        assert _run_outcome(None, TimeoutError()) == "timed_out"
+        assert _run_outcome(None, InterruptedError()) == "interrupted"
+
     def test_ollama_small_runtime_context_fails_before_api_call(self, agent, caplog):
         self._setup_agent(agent)
         agent.model = "qwen3.5:9b"
@@ -7513,7 +7582,7 @@ class TestDeadRetryCode:
 
     def test_no_unreachable_max_retries_after_backoff(self):
         import inspect
-        from agent.conversation_loop import run_conversation as _rc
+        from agent.conversation_loop import _run_conversation_impl as _rc
         source = inspect.getsource(_rc)
         occurrences = source.count("if retry_count >= max_retries:")
         assert occurrences == 2, (
@@ -7552,7 +7621,7 @@ class TestMemoryContextSanitization:
         a literal <memory-context> tag we don't silently delete their text.
         The streaming scrubber + plugin-side scrub cover real leak paths."""
         import inspect
-        from agent.conversation_loop import run_conversation as _rc
+        from agent.conversation_loop import _run_conversation_impl as _rc
         src = inspect.getsource(_rc)
         assert "sanitize_context(user_message)" not in src
         assert "sanitize_context(persist_user_message)" not in src

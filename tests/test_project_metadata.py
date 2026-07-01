@@ -222,10 +222,17 @@ def test_feishu_extra_includes_qrcode_for_qr_login():
     assert any(dep.startswith("qrcode") for dep in feishu_extra)
 
 
-def test_nemo_relay_extra_uses_official_0_3_distribution():
-    optional_dependencies = _load_optional_dependencies()
+def test_nemo_relay_is_source_pinned_as_a_core_dependency():
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+    optional_dependencies = project["optional-dependencies"]
+    expected = (
+        "nemo-relay @ git+https://github.com/NVIDIA/NeMo-Flow.git@"
+        "8b99f66c68886c8cfdf0e4ab9c857d7c262b2160"
+    )
 
-    assert optional_dependencies["nemo-relay"] == ["nemo-relay==0.3"]
+    assert expected in project["dependencies"]
+    assert optional_dependencies["nemo-relay"] == []
     assert not any(
         spec == "hermes-agent[nemo-relay]"
         for spec in optional_dependencies["all"]

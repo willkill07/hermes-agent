@@ -898,6 +898,32 @@ DEFAULT_CONFIG = {
     "fallback_providers": [],
     "credential_pool_strategies": {},
     "toolsets": ["hermes-cli"],
+    # NeMo Relay observability. The bundled plugin remains explicitly opt-in
+    # through plugins.enabled; once enabled, ATOF is the local source of truth.
+    "telemetry": {
+        "capture_content": False,
+        "content_redaction": "secrets",
+        "plugins_toml": None,
+        "atof": {
+            "enabled": True,
+            "output_directory": None,
+            "filename": "hermes-atof.jsonl",
+            "mode": "append",
+        },
+        "atif": {
+            "enabled": False,
+            "output_directory": None,
+            "filename_template": "hermes-atif-{session_id}.json",
+        },
+        "export": {
+            "otlp": {"enabled": False, "endpoint": None, "headers_env": {}},
+            "openinference": {
+                "enabled": False,
+                "endpoint": None,
+                "headers_env": {},
+            },
+        },
+    },
     # Global active chat session cap across CLI, TUI/dashboard, and messaging.
     # None/0 = unbounded.
     "max_concurrent_sessions": None,
@@ -4806,7 +4832,7 @@ _KNOWN_ROOT_KEYS = {
     "fallback_providers", "credential_pool_strategies", "toolsets",
     "agent", "terminal", "display", "compression", "delegation",
     "auxiliary", "moa", "custom_providers", "context", "memory", "gateway",
-    "sessions", "streaming", "updates", "mcp_servers",
+    "sessions", "streaming", "updates", "mcp_servers", "telemetry",
 }
 
 # Valid fields inside a custom_providers list entry

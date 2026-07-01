@@ -515,7 +515,7 @@ def _sync_failover_system_message(agent, api_messages, active_system_prompt):
     return sp
 
 
-def run_conversation(
+def _run_conversation_impl(
     agent,
     user_message: str,
     system_message: str = None,
@@ -525,6 +525,7 @@ def run_conversation(
     persist_user_message: Optional[str] = None,
     persist_user_timestamp: Optional[float] = None,
     moa_config: Optional[dict[str, Any]] = None,
+    _turn_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run a complete conversation with tool calling until completion.
@@ -577,6 +578,7 @@ def run_conversation(
         stream_callback,
         persist_user_message,
         persist_user_timestamp,
+        _turn_id,
         restore_or_build_system_prompt=_restore_or_build_system_prompt,
         install_safe_stdio=_install_safe_stdio,
         sanitize_surrogates=_sanitize_surrogates,
@@ -5150,6 +5152,163 @@ def run_conversation(
         _turn_exit_reason=_turn_exit_reason,
     )
 
+
+
+def _run_usage_snapshot(agent) -> Dict[str, float]:
+    fields = {
+        "input_tokens": "session_input_tokens",
+        "output_tokens": "session_output_tokens",
+        "cache_read_tokens": "session_cache_read_tokens",
+        "cache_write_tokens": "session_cache_write_tokens",
+        "reasoning_tokens": "session_reasoning_tokens",
+        "estimated_cost_usd": "session_estimated_cost_usd",
+    }
+    snapshot: Dict[str, float] = {}
+    for key, attr in fields.items():
+        try:
+            snapshot[key] = float(getattr(agent, attr, 0) or 0)
+        except (TypeError, ValueError):
+            snapshot[key] = 0.0
+    return snapshot
+
+
+def _run_outcome(result: Optional[Dict[str, Any]], error: Optional[BaseException]) -> str:
+    if error is not None:
+        error_name = type(error).__name__.lower()
+        if error_name == "cancellederror":
+            return "cancelled"
+        if isinstance(error, TimeoutError) or "timeout" in error_name:
+            return "timed_out"
+        if isinstance(error, (KeyboardInterrupt, InterruptedError)):
+            return "interrupted"
+        return "failed"
+    result = result or {}
+    if result.get("completed"):
+        return "completed"
+    if result.get("interrupted"):
+        return "interrupted"
+    reason = str(result.get("turn_exit_reason") or result.get("error") or "").lower()
+    if "max_iteration" in reason:
+        return "max_iterations"
+    if "timeout" in reason or "timed_out" in reason:
+        return "timed_out"
+    if "block" in reason or "denied" in reason:
+        return "blocked"
+    if result.get("failed"):
+        return "failed"
+    return "unknown"
+
+
+def _run_entrypoint(platform: Any) -> str:
+    value = str(platform or "").lower()
+    if value in {
+        "telegram", "discord", "slack", "whatsapp", "signal", "matrix",
+        "email", "sms", "teams", "feishu", "wecom", "line", "google_chat",
+    }:
+        return "gateway"
+    if value in {"tui", "api", "cron", "batch", "acp", "desktop"}:
+        return value
+    return "cli"
+
+
+def _invoke_run_hook(name: str, **payload: Any) -> None:
+    try:
+        from hermes_cli.plugins import has_hook, invoke_hook
+
+        if has_hook(name):
+            invoke_hook(name, **payload)
+    except Exception:
+        logger.debug("%s hook failed", name, exc_info=True)
+
+
+def run_conversation(
+    agent,
+    user_message: str,
+    system_message: str = None,
+    conversation_history: List[Dict[str, Any]] = None,
+    task_id: str = None,
+    stream_callback: Optional[callable] = None,
+    persist_user_message: Optional[str] = None,
+    persist_user_timestamp: Optional[float] = None,
+    moa_config: Optional[dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Run one agent turn and emit one generic start/end lifecycle pair."""
+    effective_task_id = task_id or str(uuid.uuid4())
+    run_id = f"{agent.session_id or 'session'}:{effective_task_id}:{uuid.uuid4().hex[:8]}"
+    started_at = time.time()
+    start_session_id = agent.session_id or ""
+    usage_before = _run_usage_snapshot(agent)
+    platform = getattr(agent, "platform", None) or ""
+    parent_session_id = getattr(agent, "_parent_session_id", None)
+    base_payload = {
+        "run_id": run_id,
+        "turn_id": run_id,
+        "task_id": effective_task_id,
+        "session_id": start_session_id,
+        "platform": platform,
+        "entrypoint": _run_entrypoint(platform),
+        "model": getattr(agent, "model", None),
+        "provider": getattr(agent, "provider", None),
+        "api_mode": getattr(agent, "api_mode", None),
+        "is_delegated": bool(parent_session_id),
+        "parent_session_id": parent_session_id,
+        "parent_turn_id": getattr(agent, "_parent_turn_id", None),
+    }
+    _invoke_run_hook(
+        "on_run_start",
+        **base_payload,
+        started_at=started_at,
+        user_message_chars=len(str(user_message or "")),
+    )
+
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[BaseException] = None
+    try:
+        result = _run_conversation_impl(
+            agent,
+            user_message,
+            system_message,
+            conversation_history,
+            effective_task_id,
+            stream_callback,
+            persist_user_message,
+            persist_user_timestamp=persist_user_timestamp,
+            moa_config=moa_config,
+            _turn_id=run_id,
+        )
+        return result
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        usage_after = _run_usage_snapshot(agent)
+        usage_delta = {
+            key: max(0.0, usage_after[key] - usage_before[key])
+            for key in usage_before
+        }
+        for key in (
+            "input_tokens", "output_tokens", "cache_read_tokens",
+            "cache_write_tokens", "reasoning_tokens",
+        ):
+            usage_delta[key] = int(usage_delta[key])
+        end_payload = {
+            **base_payload,
+            "session_id": agent.session_id or start_session_id,
+            "started_at": started_at,
+            "ended_at": time.time(),
+            "outcome": _run_outcome(result, error),
+            "completed": bool((result or {}).get("completed")),
+            "failed": bool((result or {}).get("failed")) or error is not None,
+            "interrupted": bool((result or {}).get("interrupted"))
+            or isinstance(error, KeyboardInterrupt),
+            "turn_exit_reason": (result or {}).get("turn_exit_reason"),
+            "api_calls": int((result or {}).get("api_calls") or 0),
+            "cost_status": getattr(agent, "session_cost_status", None),
+            "cost_source": getattr(agent, "session_cost_source", None),
+            "error_type": type(error).__name__ if error is not None else None,
+            **usage_delta,
+        }
+        _invoke_run_hook("on_run_end", **end_payload)
 
 
 __all__ = ["run_conversation"]

@@ -152,6 +152,23 @@ _DEFAULT_PAYLOADS = {
     "on_session_end": {"session_id": "test-session"},
     "on_session_finalize": {"session_id": "test-session"},
     "on_session_reset": {"session_id": "test-session"},
+    "on_run_start": {
+        "run_id": "test-run",
+        "turn_id": "test-run",
+        "task_id": "test-task",
+        "session_id": "test-session",
+        "started_at": 1782842400.0,
+    },
+    "on_run_end": {
+        "run_id": "test-run",
+        "turn_id": "test-run",
+        "task_id": "test-task",
+        "session_id": "test-session",
+        "started_at": 1782842400.0,
+        "ended_at": 1782842401.0,
+        "outcome": "completed",
+        "completed": True,
+    },
     "pre_api_request": {
         "session_id": "test-session",
         "task_id": "test-task",
