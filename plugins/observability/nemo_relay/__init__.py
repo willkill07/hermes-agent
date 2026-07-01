@@ -40,6 +40,7 @@ class _SubagentParent:
 @dataclass
 class _Settings:
     plugins_config: dict[str, Any]
+    local_enabled: bool = True
     capture_content: bool = False
     content_redaction: str = "secrets"
 
@@ -56,6 +57,31 @@ class _Runtime:
         self._state_lock = threading.RLock()
         self._configure_plugins()
         self._configure_guardrails()
+        self._configure_projection()
+
+    def _configure_projection(self) -> None:
+        if not self.settings.local_enabled:
+            return
+        subscribers = getattr(self.nemo_relay, "subscribers", None)
+        register = getattr(subscribers, "register", None)
+        if not callable(register):
+            self.diagnostics.append("subscribers.register unavailable")
+            return
+        try:
+            from hermes_cli.telemetry import TelemetryProjection
+
+            projection = TelemetryProjection()
+
+            def consume(event: Any) -> None:
+                try:
+                    projection.consume(event)
+                except Exception:
+                    logger.debug("Telemetry projection update failed", exc_info=True)
+
+            register("hermes.telemetry.projector", consume)
+        except Exception as exc:
+            self.diagnostics.append(f"telemetry projector: {type(exc).__name__}: {exc}")
+            logger.debug("Telemetry projector initialization failed", exc_info=True)
 
     def _configure_plugins(self) -> None:
         plugin_mod = getattr(self.nemo_relay, "plugin", None)
@@ -527,7 +553,11 @@ def _load_settings() -> _Settings:
     )
     return _Settings(
         plugins_config=plugins_config,
-        capture_content=bool(telemetry.get("capture_content", False)),
+        local_enabled=bool(telemetry.get("local", True)),
+        capture_content=bool(
+            _as_dict(telemetry.get("trajectories")).get("enabled", False)
+            or telemetry.get("capture_content", False)
+        ),
         content_redaction=str(telemetry.get("content_redaction") or "secrets"),
     )
 
@@ -585,11 +615,16 @@ def _generated_plugins_config(
     """Translate Hermes telemetry settings into Relay's native plugin config."""
     atof = _as_dict(telemetry.get("atof"))
     atif = _as_dict(telemetry.get("atif"))
+    local_enabled = bool(telemetry.get("local", True))
+    trajectories_enabled = bool(
+        _as_dict(telemetry.get("trajectories")).get("enabled", False)
+        or telemetry.get("capture_content", False)
+    )
     exporters = _as_dict(telemetry.get("export"))
     observability = {
         "version": 1,
         "atof": {
-            "enabled": bool(atof.get("enabled", True)),
+            "enabled": local_enabled and bool(atof.get("enabled", True)),
             "output_directory": str(
                 atof.get("output_directory") or telemetry_root / "atof"
             ),
@@ -597,7 +632,8 @@ def _generated_plugins_config(
             "mode": str(atof.get("mode") or "append"),
         },
         "atif": {
-            "enabled": bool(atif.get("enabled", False)),
+            "enabled": local_enabled
+            and (trajectories_enabled or bool(atif.get("enabled", False))),
             "output_directory": str(
                 atif.get("output_directory") or telemetry_root / "atif"
             ),

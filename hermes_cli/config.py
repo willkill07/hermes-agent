@@ -901,8 +901,15 @@ DEFAULT_CONFIG = {
     # NeMo Relay observability. The bundled plugin remains explicitly opt-in
     # through plugins.enabled; once enabled, ATOF is the local source of truth.
     "telemetry": {
+        "local": True,
+        "allow_aggregate": False,
+        "consent_state": "unknown",
+        "install_id": "",
+        "retention_days": 90,
+        "redact_secrets": True,
         "capture_content": False,
         "content_redaction": "secrets",
+        "trajectories": {"enabled": False},
         "plugins_toml": None,
         "atof": {
             "enabled": True,

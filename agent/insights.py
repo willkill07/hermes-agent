@@ -117,6 +117,12 @@ class InsightsEngine:
         tool_usage = self._get_tool_usage(cutoff, source)
         skill_usage = self._get_skill_usage(cutoff, source)
         message_stats = self._get_message_stats(cutoff, source)
+        try:
+            from hermes_cli.telemetry import summarize_connection
+
+            telemetry = summarize_connection(self._conn, cutoff=cutoff, source=source)
+        except Exception:
+            telemetry = {"run_count": 0}
 
         if not sessions:
             return {
@@ -138,6 +144,7 @@ class InsightsEngine:
                 },
                 "activity": {},
                 "top_sessions": [],
+                "telemetry": telemetry,
             }
 
         # Compute insights
@@ -161,6 +168,7 @@ class InsightsEngine:
             "skills": skills,
             "activity": activity,
             "top_sessions": top_sessions,
+            "telemetry": telemetry,
         }
 
     # =========================================================================
@@ -758,6 +766,32 @@ class InsightsEngine:
             lines.append(f"  Active time:       ~{format_duration_compact(o['total_hours'] * 3600):<11}  Avg session:     ~{format_duration_compact(o['avg_session_duration'])}")
         lines.append(f"  Avg msgs/session:  {o['avg_messages_per_session']:.1f}")
         lines.append("")
+
+        telemetry = report.get("telemetry", {})
+        if telemetry.get("run_count"):
+            lines.append("  ⚡ Runtime Telemetry")
+            lines.append("  " + "─" * 56)
+            lines.append(
+                f"  Runs: {telemetry['run_count']:,}  "
+                f"Complete: {telemetry['completion_rate']:.1%}  "
+                f"Failed: {telemetry['failure_rate']:.1%}"
+            )
+            lines.append(
+                f"  Run latency p50/p95: "
+                f"{format_duration_compact(telemetry['run_latency_p50'])} / "
+                f"{format_duration_compact(telemetry['run_latency_p95'])}"
+            )
+            lines.append(
+                f"  LLM calls: {telemetry['model_calls']:,}  "
+                f"Tool calls: {telemetry['tool_calls']:,}  "
+                f"Tool failures: {telemetry['tool_failures']:,}"
+            )
+            lines.append(
+                f"  Runtime tokens: {telemetry['input_tokens'] + telemetry['output_tokens']:,}  "
+                f"Cache reads: {telemetry['cache_read_tokens']:,}  "
+                f"Estimated cost: ${telemetry['estimated_cost_usd']:.4f}"
+            )
+            lines.append("")
 
         # Model breakdown
         if report["models"]:

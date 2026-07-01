@@ -31,6 +31,21 @@ Once enabled, the safe default writes canonical ATOF events to:
 $HERMES_HOME/telemetry/atof/hermes-atof.jsonl
 ```
 
+Hermes also maintains disposable `tel_*` projection tables in
+`$HERMES_HOME/state.db` for fast user-facing queries. Inspect them through:
+
+```bash
+hermes telemetry status
+hermes telemetry preview --days 30
+hermes telemetry rebuild
+hermes telemetry export --out telemetry.ndjson
+hermes insights --days 30
+```
+
+`telemetry rebuild` recreates the projection from ATOF and never modifies the
+canonical event files. The bundled `telemetry` and `telemetry-analysis` skills
+teach agents how to operate and interpret these interfaces.
+
 No prompts, model responses, raw tool arguments, or raw tool results are
 recorded under the default configuration. Counts, sizes, identifiers, usage,
 timings, outcomes, and parent-child relationships remain available.
@@ -45,6 +60,11 @@ plugins:
     - observability/nemo_relay
 
 telemetry:
+  local: true
+  consent_state: unknown
+  retention_days: 90
+  trajectories:
+    enabled: false
   capture_content: false
   content_redaction: secrets
 

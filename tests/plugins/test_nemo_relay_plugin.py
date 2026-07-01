@@ -108,6 +108,7 @@ class _FakeNemoRelay:
             initialize=self._plugin_initialize,
             clear=self._plugin_clear,
         )
+        self.subscribers = SimpleNamespace(register=self._register_subscriber)
         self.codecs = SimpleNamespace(
             OpenAIChatCodec=_FakeChatCodec,
             OpenAIResponsesCodec=_FakeResponsesCodec,
@@ -164,6 +165,9 @@ class _FakeNemoRelay:
 
     def _register_guardrail(self, name, priority, callback):
         self.events.append(("guardrail.register", name, priority, callback))
+
+    def _register_subscriber(self, name, callback):
+        self.events.append(("subscriber.register", name, callback))
 
     async def _plugin_initialize(self, config):
         self.events.append(("plugin.initialize", config))
@@ -241,6 +245,9 @@ def test_one_relay_scope_per_run_and_process_observability_plugin(
     assert pops[0][2]["output"]["outcome"] == "completed"
     assert pops[1][2]["output"]["outcome"] == "failed"
     assert [event[0] for event in fake.events].count("plugin.initialize") == 1
+    assert [event[1] for event in fake.events if event[0] == "subscriber.register"] == [
+        "hermes.telemetry.projector"
+    ]
     assert not any(event[0] == "atof.register" for event in fake.events)
     initialize = next(event for event in fake.events if event[0] == "plugin.initialize")
     observability = initialize[1]["components"][0]["config"]

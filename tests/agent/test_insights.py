@@ -442,6 +442,27 @@ class TestInsightsPopulated:
 # =========================================================================
 
 class TestTerminalFormatting:
+    def test_terminal_format_includes_runtime_telemetry(self, populated_db):
+        from hermes_cli.telemetry import TelemetryProjection
+
+        projection = TelemetryProjection(populated_db.db_path)
+        projection.consume({
+            "kind": "scope", "uuid": "run-1", "name": "hermes.run:run-1",
+            "category": "agent", "scope_category": "start", "timestamp": time.time() - 10,
+            "metadata": {"run_id": "run-1", "platform": "cli"}, "data": {},
+        })
+        projection.consume({
+            "kind": "scope", "uuid": "run-1", "name": "hermes.run:run-1",
+            "category": "agent", "scope_category": "end", "timestamp": time.time(),
+            "metadata": {"run_id": "run-1", "platform": "cli"},
+            "data": {"outcome": "completed", "completed": True, "input_tokens": 12, "output_tokens": 3},
+        })
+        engine = InsightsEngine(populated_db)
+        report = engine.generate(days=30)
+        text = engine.format_terminal(report)
+        assert "Runtime Telemetry" in text
+        assert report["telemetry"]["run_count"] == 1
+
     def test_terminal_format_has_sections(self, populated_db):
         engine = InsightsEngine(populated_db)
         report = engine.generate(days=30)
