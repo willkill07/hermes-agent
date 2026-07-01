@@ -4010,6 +4010,12 @@ class TestRunConversation:
         assert _run_outcome(None, TimeoutError()) == "timed_out"
         assert _run_outcome(None, InterruptedError()) == "interrupted"
 
+    def test_run_outcome_classifies_terminal_result_errors(self):
+        from agent.conversation_loop import _run_outcome
+
+        assert _run_outcome({"error": "provider failed"}, None) == "failed"
+        assert _run_outcome({"partial": True}, None) == "failed"
+
     def test_ollama_small_runtime_context_fails_before_api_call(self, agent, caplog):
         self._setup_agent(agent)
         agent.model = "qwen3.5:9b"

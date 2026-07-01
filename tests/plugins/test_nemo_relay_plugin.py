@@ -288,6 +288,26 @@ def test_managed_llm_and_tool_execution_are_default(tmp_path, monkeypatch):
     assert tool_start[3]["handle"] == ("scope", "hermes.run:run-1")
 
 
+def test_execution_bypass_preserves_original_payload_objects(tmp_path, monkeypatch):
+    fake = _FakeNemoRelay()
+    plugin = _fresh_plugin(monkeypatch, fake, tmp_path)
+    request = {}
+    args = {}
+
+    llm_result = plugin.on_llm_execution_middleware(
+        request=request,
+        next_call=lambda payload: payload,
+    )
+    tool_result = plugin.on_tool_execution_middleware(
+        tool_name="terminal",
+        args=args,
+        next_call=lambda payload: payload,
+    )
+
+    assert llm_result is request
+    assert tool_result is args
+
+
 @pytest.mark.parametrize(
     ("api_mode", "provider", "codec_type"),
     [
@@ -464,6 +484,47 @@ telemetry:
     assert config["endpoint"] == "https://collector.example/v1/traces"
     assert config["headers"] == {"Authorization": "Bearer in-memory-secret"}
     assert "in-memory-secret" not in (home / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_config_failure_keeps_profile_safe_telemetry_root(tmp_path, monkeypatch):
+    fake = _FakeNemoRelay()
+    plugin = _fresh_plugin(monkeypatch, fake, tmp_path)
+    monkeypatch.setattr(
+        "hermes_cli.config.load_config",
+        lambda: (_ for _ in ()).throw(RuntimeError("broken config")),
+    )
+
+    settings = plugin._load_settings()
+    observability = settings.plugins_config["components"][0]["config"]
+
+    expected_root = tmp_path / "hermes-home" / "telemetry"
+    assert observability["atof"]["output_directory"] == str(expected_root / "atof")
+    assert observability["atif"]["output_directory"] == str(expected_root / "atif")
+
+
+def test_disabled_observability_component_does_not_create_directories(
+    tmp_path, monkeypatch
+):
+    fake = _FakeNemoRelay()
+    plugin = _fresh_plugin(monkeypatch, fake, tmp_path)
+    output = tmp_path / "must-not-exist"
+
+    plugin._ensure_plugin_output_dirs({
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": False,
+                "config": {
+                    "atof": {
+                        "enabled": True,
+                        "output_directory": str(output),
+                    }
+                },
+            }
+        ]
+    })
+
+    assert not output.exists()
 
 
 def test_real_nemo_relay_writes_structural_atof(tmp_path, monkeypatch):

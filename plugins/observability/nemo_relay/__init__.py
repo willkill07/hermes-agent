@@ -301,10 +301,15 @@ class _Runtime:
     def execute_llm(self, kwargs: dict[str, Any]) -> Any:
         state = self.active_run(kwargs)
         next_call = kwargs.get("next_call")
-        request_body = _jsonable(kwargs.get("request") or {})
+        request_payload = kwargs.get("request")
+        if request_payload is None:
+            request_payload = {}
         if state is None or not callable(next_call):
-            return next_call(request_body) if callable(next_call) else request_body
+            return (
+                next_call(request_payload) if callable(next_call) else request_payload
+            )
 
+        request_body = _jsonable(request_payload)
         request = self.nemo_relay.LLMRequest({}, request_body)
         codec = _llm_codec(
             self.nemo_relay,
@@ -347,10 +352,13 @@ class _Runtime:
     def execute_tool(self, kwargs: dict[str, Any]) -> Any:
         state = self.active_run(kwargs)
         next_call = kwargs.get("next_call")
-        args = _jsonable(kwargs.get("args") or {})
+        args_payload = kwargs.get("args")
+        if args_payload is None:
+            args_payload = {}
         if state is None or not callable(next_call):
-            return next_call(args) if callable(next_call) else args
+            return next_call(args_payload) if callable(next_call) else args_payload
 
+        args = _jsonable(args_payload)
         tool_name = str(kwargs.get("tool_name") or "tool")
 
         def _normalize(next_args: Any) -> Any:
@@ -500,16 +508,16 @@ def _get_runtime() -> Optional[_Runtime]:
 
 
 def _load_settings() -> _Settings:
+    from hermes_constants import get_hermes_home
+
+    telemetry_root = get_hermes_home() / "telemetry"
     try:
         from hermes_cli.config import load_config
-        from hermes_constants import get_hermes_home
 
         telemetry = _as_dict(load_config().get("telemetry"))
-        telemetry_root = get_hermes_home() / "telemetry"
     except Exception:
         logger.debug("Hermes telemetry config load failed", exc_info=True)
         telemetry = {}
-        telemetry_root = Path.home() / ".hermes" / "telemetry"
 
     plugins_toml = str(telemetry.get("plugins_toml") or "").strip()
     generated_config = _generated_plugins_config(telemetry, telemetry_root)
@@ -615,7 +623,11 @@ def _generated_plugins_config(
 
 def _ensure_plugin_output_dirs(config: dict[str, Any]) -> None:
     for component in config.get("components", []):
-        if not isinstance(component, dict) or component.get("kind") != "observability":
+        if (
+            not isinstance(component, dict)
+            or component.get("kind") != "observability"
+            or component.get("enabled") is False
+        ):
             continue
         component_config = _as_dict(component.get("config"))
         for name in ("atof", "atif"):

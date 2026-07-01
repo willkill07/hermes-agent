@@ -5194,7 +5194,7 @@ def _run_outcome(result: Optional[Dict[str, Any]], error: Optional[BaseException
         return "timed_out"
     if "block" in reason or "denied" in reason:
         return "blocked"
-    if result.get("failed"):
+    if result.get("failed") or result.get("error") or result.get("partial"):
         return "failed"
     return "unknown"
 
