@@ -1,14 +1,21 @@
 name: nemo_relay
 version: "0.1.0"
-description: "NeMo Relay runtime scopes, managed LLM/tool calls, and native observability exporters for Hermes."
+description: "NeMo Relay runtime scopes, managed calls, and local/export observability for Hermes."
 author: NousResearch
 hooks:
   - on_run_start
   - on_run_end
+  - on_session_start
   - on_session_end
+  - on_session_finalize
+  - on_session_reset
   - pre_llm_call
   - post_llm_call
+  - pre_api_request
+  - post_api_request
   - api_request_error
+  - pre_tool_call
+  - post_tool_call
   - pre_approval_request
   - post_approval_response
   - subagent_start

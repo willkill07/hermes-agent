@@ -248,7 +248,7 @@ class TelemetryProjection:
         run_id = str(metadata.get("run_id") or data.get("run_id") or "") or None
         error_type = _error_type(event, data, metadata)
 
-        if category == "agent" and (run_id or name.startswith("hermes.run:")):
+        if category == "agent" and name.startswith("hermes.run:"):
             run_id = run_id or name.removeprefix("hermes.run:")
             if scope_category == "start":
                 conn.execute(
