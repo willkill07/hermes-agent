@@ -34,7 +34,7 @@ def _events():
             "category": "llm",
             "scope_category": "start",
             "timestamp": "2026-01-01T00:00:01Z",
-            "metadata": {"run_id": "run-1"},
+            "metadata": {"turn_id": "run-1"},
             "category_profile": {"model_name": "test-model"},
             "data": {},
         },
@@ -46,7 +46,7 @@ def _events():
             "category": "llm",
             "scope_category": "end",
             "timestamp": "2026-01-01T00:00:03Z",
-            "metadata": {"run_id": "run-1"},
+            "metadata": {"turn_id": "run-1"},
             "category_profile": {"model_name": "test-model"},
             "data": {
                 "usage": {"input_tokens": 10, "output_tokens": 5},
@@ -61,7 +61,7 @@ def _events():
             "category": "tool",
             "scope_category": "start",
             "timestamp": "2026-01-01T00:00:04Z",
-            "metadata": {"run_id": "run-1"},
+            "metadata": {"turn_id": "run-1"},
             "data": {},
         },
         {
@@ -72,7 +72,7 @@ def _events():
             "category": "tool",
             "scope_category": "end",
             "timestamp": "2026-01-01T00:00:05Z",
-            "metadata": {"run_id": "run-1"},
+            "metadata": {"turn_id": "run-1"},
             "data": {"result_class": "object"},
         },
         {
@@ -113,6 +113,13 @@ def test_projection_is_idempotent_and_summarizes(tmp_path):
     assert summary["model_latency_p50"] == 2
     assert summary["input_tokens"] == 10
     assert summary["recent_runs"][0]["run_id"] == "run-1"
+    with sqlite3.connect(projection.db_path) as conn:
+        assert (
+            conn.execute("SELECT run_id FROM tel_model_calls").fetchone()[0] == "run-1"
+        )
+        assert (
+            conn.execute("SELECT run_id FROM tel_tool_calls").fetchone()[0] == "run-1"
+        )
 
 
 def test_rebuild_reads_atof_and_ignores_bad_lines(tmp_path):

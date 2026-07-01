@@ -246,6 +246,12 @@ class TelemetryProjection:
         data = _dict(event.get("data"))
         profile = _dict(event.get("category_profile"))
         run_id = str(metadata.get("run_id") or data.get("run_id") or "") or None
+        if run_id is None and parent_id:
+            parent_run = conn.execute(
+                "SELECT run_id FROM tel_runs WHERE id = ?", (parent_id,)
+            ).fetchone()
+            if parent_run:
+                run_id = parent_run[0]
         error_type = _error_type(event, data, metadata)
 
         if category == "agent" and name.startswith("hermes.run:"):
@@ -300,6 +306,11 @@ class TelemetryProjection:
                         _number(data.get("estimated_cost_usd")),
                         error_type,
                     ),
+                )
+            for table in ("tel_model_calls", "tel_tool_calls", "tel_error_events"):
+                conn.execute(
+                    f"UPDATE {table} SET run_id = ? WHERE parent_id = ? AND run_id IS NULL",
+                    (run_id, event_id),
                 )
             return
 
