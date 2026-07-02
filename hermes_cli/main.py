@@ -298,6 +298,7 @@ from hermes_cli.subcommands.memory import build_memory_parser
 from hermes_cli.subcommands.acp import build_acp_parser
 from hermes_cli.subcommands.tools import build_tools_parser
 from hermes_cli.subcommands.insights import build_insights_parser
+from hermes_cli.subcommands.telemetry import build_telemetry_parser
 from hermes_cli.subcommands.skills import build_skills_parser
 from hermes_cli.subcommands.pairing import build_pairing_parser
 from hermes_cli.subcommands.plugins import build_plugins_parser
@@ -12365,6 +12366,19 @@ def cmd_insights(args):
         print(f"Error generating insights: {e}")
 
 
+def cmd_telemetry(args):
+    from hermes_cli.telemetry import telemetry_command
+
+    try:
+        return telemetry_command(args)
+    except (OSError, PermissionError, RuntimeError, ValueError) as exc:
+        if getattr(args, "json", False):
+            print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
+        else:
+            print(f"Telemetry error: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_skills(args):
     # Route 'config' action to skills_config module
     if getattr(args, "skills_action", None) == "config":
@@ -13444,6 +13458,7 @@ def main():
     # insights command  (parser built in hermes_cli/subcommands/insights.py)
     # =========================================================================
     build_insights_parser(subparsers, cmd_insights=cmd_insights)
+    build_telemetry_parser(subparsers, cmd_telemetry=cmd_telemetry)
 
     # =========================================================================
     # claw command  (parser built in hermes_cli/subcommands/claw.py)

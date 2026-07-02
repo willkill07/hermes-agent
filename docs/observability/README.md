@@ -2,7 +2,7 @@
 
 Hermes observer hooks are the read-only telemetry contract for plugins that
 need to reconstruct agent execution without changing runtime behavior. This
-contract supports trace, metrics, audit, replay, and export integrations such
+contract supports trace, metrics, audit, and export integrations such
 as Langfuse, OpenTelemetry-style collectors, and NeMo Relay.
 
 Observer hooks are intentionally backend-neutral. They expose stable lifecycle
@@ -90,6 +90,8 @@ Session hooks describe conversation boundaries and resets:
 | `on_session_end` | A `run_conversation` call ends, including interrupted or incomplete turns. |
 | `on_session_finalize` | CLI or gateway tears down an active session identity. |
 | `on_session_reset` | CLI or gateway moves from an old session identity to a new one. |
+| `on_run_start` | An `AIAgent.run_conversation` invocation begins. |
+| `on_run_end` | The invocation completes, fails, or is interrupted. |
 
 Common fields include `session_id`, `completed`, `interrupted`, `reason`,
 `old_session_id`, and `new_session_id` where available.
@@ -219,6 +221,9 @@ and `child_goal`.
 `subagent_stop` fields include parent/child session IDs, role/status fields,
 `child_summary`, and `duration_ms`.
 
+The bundled Relay plugin stores only structural subagent fields. It never
+persists `child_goal` or `child_summary` in lifecycle marks.
+
 Observers can use these hooks to model nested trajectories while keeping child
 agent execution linked to the parent turn that spawned it.
 
@@ -239,6 +244,19 @@ objects in sanitized fields.
 Legacy compatibility fields such as `request_messages`, `conversation_history`,
 and `assistant_message` may still be present for existing plugins. New
 observability consumers should prefer the sanitized payloads.
+
+## Local Relay Telemetry
+
+Hermes ships the trusted `observability/nemo_relay` plugin enabled by default.
+It writes structural ATOF locally, maintains rebuildable `tel_*` tables in
+`~/.hermes/telemetry/telemetry.db`, and powers `/usage`, `/insights`, browser Analytics, and Electron
+Analytics. Content capture, ATIF trajectories, OTLP, and OpenInference remain
+off until explicitly configured.
+
+Use `hermes telemetry status`, `preview`, `rebuild`, `export`, `consent`,
+`aggregate export`, and `purge` to manage this data. Default exports reconstruct
+an allowlisted structural event even when the source file contains opted-in
+content. `--include-content` is always required for content-bearing export.
 
 ## Performance
 

@@ -1846,6 +1846,27 @@ export interface AnalyticsResponse {
     summary: AnalyticsSkillsSummary;
     top_skills: AnalyticsSkillEntry[];
   };
+  telemetry: Record<string, unknown> & {
+    available?: boolean;
+    run_count?: number;
+    model_calls?: number;
+    tool_calls?: number;
+    tool_failures?: number;
+    cache_hit_rate?: number;
+    completion_rate?: number;
+    totals?: AnalyticsResponse["totals"];
+    daily?: AnalyticsDailyEntry[];
+    by_model?: AnalyticsModelEntry[];
+    health?: {
+      health?: string;
+      consent_state?: string;
+      retention_days?: number;
+      redaction?: string;
+      content_capture?: boolean;
+      relay_dependency?: { available?: boolean; version?: string };
+      projection_error?: string | null;
+    };
+  };
 }
 
 export interface ActiveProfileInfo {

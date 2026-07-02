@@ -5702,17 +5702,58 @@ class AIAgent:
     ) -> Dict[str, Any]:
         """Forwarder — see ``agent.conversation_loop.run_conversation``."""
         from agent.conversation_loop import run_conversation
-        return run_conversation(
-            self,
-            user_message,
-            system_message,
-            conversation_history,
-            task_id,
-            stream_callback,
-            persist_user_message,
-            persist_user_timestamp=persist_user_timestamp,
-            moa_config=moa_config,
+        from hermes_cli.plugins import invoke_hook as _invoke_hook
+
+        def _emit_run_hook(name: str, **payload: Any) -> None:
+            try:
+                _invoke_hook(name, **payload)
+            except Exception:
+                logger.debug("run telemetry hook %s failed", name, exc_info=True)
+
+        run_id = uuid.uuid4().hex
+        started_at = time.time()
+        entrypoint = _session_source_for_agent(getattr(self, "platform", None))
+        common = {
+            "run_id": run_id,
+            "session_id": getattr(self, "session_id", None) or "",
+            "task_id": task_id or "",
+            "platform": getattr(self, "platform", None) or entrypoint,
+            "entrypoint": entrypoint,
+            "provider": getattr(self, "provider", None) or "",
+            "model": getattr(self, "model", None) or "",
+        }
+        _emit_run_hook("on_run_start", **common, started_at=started_at)
+        try:
+            result = run_conversation(
+                self,
+                user_message,
+                system_message,
+                conversation_history,
+                task_id,
+                stream_callback,
+                persist_user_message,
+                persist_user_timestamp=persist_user_timestamp,
+                moa_config=moa_config,
+            )
+        except BaseException as exc:
+            _emit_run_hook(
+                "on_run_end",
+                **common,
+                ended_at=time.time(),
+                completed=False,
+                outcome="interrupted" if isinstance(exc, KeyboardInterrupt) else "failed",
+                error_type=type(exc).__name__,
+            )
+            raise
+        _emit_run_hook(
+            "on_run_end",
+            **common,
+            ended_at=time.time(),
+            completed=True,
+            outcome="completed",
+            usage=result.get("usage") if isinstance(result, dict) else None,
         )
+        return result
 
     def chat(self, message: str, stream_callback: Optional[callable] = None) -> str:
         """

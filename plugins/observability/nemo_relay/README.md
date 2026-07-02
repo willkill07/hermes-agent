@@ -1,6 +1,6 @@
 # NeMo Relay Observability
 
-Optional Hermes observability plugin that maps Hermes observer hooks to
+Bundled Hermes observability plugin that maps Hermes observer hooks to
 NeMo Relay scopes, LLM spans, tool spans, marks, ATOF, and ATIF.
 
 NeMo Relay is NVIDIA's runtime layer for agent execution boundaries. It does
@@ -15,8 +15,8 @@ With this plugin enabled, Hermes Agent can:
   mark events.
 - Export raw lifecycle events as Agent Trajectory Observability Format (ATOF)
   JSONL for debugging and offline inspection.
-- Export Agent Trajectory Interchange Format (ATIF) trajectories for replay,
-  evaluation, and harness analysis workflows.
+- Export Agent Trajectory Interchange Format (ATIF) trajectories for
+  evaluation and harness analysis workflows.
 - Correlate parent sessions, delegated subagents, tool calls, and provider
   calls through shared session, turn, and trajectory metadata.
 
@@ -35,17 +35,16 @@ https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format
 
 ## Enablement
 
-Enable the plugin before setting export options:
-
-```bash
-hermes plugins enable observability/nemo_relay
-```
+The trusted bundled plugin is enabled by default for local structural
+collection. Disable it explicitly with
+`hermes plugins disable observability/nemo_relay`.
 
 The `HERMES_NEMO_RELAY_*` environment variables below only configure an
 already-enabled plugin. They do not enable plugin discovery by themselves.
 
-For isolated test homes, enable the plugin in the same `HERMES_HOME` that the
-agent run will use:
+For isolated test homes, the plugin starts automatically in the same
+`HERMES_HOME` that the agent run will use. This explicit command is only needed
+to restore it after a prior disable:
 
 ```bash
 env HERMES_HOME=/tmp/hermes-nemo-relay-test \
@@ -64,7 +63,7 @@ command in that test:
 
 ```bash
 export HERMES_HOME=/tmp/hermes-nemo-relay-test
-hermes plugins enable observability/nemo_relay
+hermes telemetry status
 hermes chat --query 'Reply exactly ok' --provider custom --model qwen3.6:35b
 ```
 
@@ -73,25 +72,25 @@ checkout that contains this plugin. A globally installed older CLI will not see
 new bundled plugins from your working tree.
 
 ```bash
-uv sync --extra nemo-relay
-uv run hermes plugins enable observability/nemo_relay
+uv sync
+uv run hermes telemetry status
 uv run hermes chat --query 'Reply exactly ok' --provider custom --model qwen3.6:35b
 ```
 
 To ship the updated CLI into another environment, build and install a fresh
-wheel from this checkout, then install the official NeMo Relay runtime extra:
+wheel from this checkout. The exact NeMo Relay wheel is a required dependency:
 
 ```bash
 uv build --wheel
 python -m pip install --force-reinstall dist/hermes_agent-*.whl
-python -m pip install "nemo-relay==0.3"
-hermes plugins enable observability/nemo_relay
+hermes telemetry status
 ```
 
-The plugin fails open when `nemo-relay` is not installed. Install and test it against the official NeMo Relay 0.3 PyPI distribution:
+The plugin fails open if Relay initialization fails. Hermes installs the
+official prebuilt NeMo Relay wheel as a required dependency:
 
 ```bash
-pip install "nemo-relay==0.3"
+pip install "nemo-relay==0.4.0"
 ```
 
 ## Export Configuration
@@ -125,6 +124,35 @@ Optional overrides:
 - `HERMES_NEMO_RELAY_ATIF_AGENT_VERSION`
 - `HERMES_NEMO_RELAY_ATIF_MODEL_NAME`
 - `HERMES_NEMO_RELAY_ATIF_SUBAGENT_EXPORT_MODE` (`embedded` by default; set `all` to also write standalone child files)
+
+Hermes expands its `hermes-atof-{date}.jsonl` UTC filename before constructing
+Relay's existing single-file ATOF exporter. It applies
+`telemetry.retention_days` while that exporter is closed at startup and at the
+next run after 24 hours in long-lived processes. This requires no Relay
+rotation or retention API.
+
+## Privacy and governance defaults
+
+Local ATOF contains structural lifecycle, lineage, status, token, cost, and
+latency fields by default. Prompts, responses, goals, paths, credentials, and
+arbitrary hook arguments are excluded. Content and ATIF capture require an
+explicit opt-in and pass through secret redaction plus the configured `pii`
+(default) or `secrets` policy.
+
+Use these commands to inspect and govern the local data:
+
+```bash
+hermes telemetry status
+hermes telemetry consent status
+hermes telemetry consent grant
+hermes telemetry aggregate export --out aggregate.json
+hermes telemetry export --out structural.ndjson
+hermes telemetry purge --confirm
+```
+
+Aggregate export additionally requires `telemetry.allow_aggregate: true` and
+never uploads automatically. `--include-content` is required for a
+content-bearing local export.
 
 ### NeMo Relay Component Config
 
@@ -194,11 +222,13 @@ For the full generic Hermes middleware contract, see
 
 ## Canonical Local Examples
 
-The observe-only examples in this section use the official `nemo-relay==0.3`
-distribution and a local Ollama model served through the OpenAI-compatible API.
+The observe-only examples in this section use Hermes' required
+`nemo-relay==0.4.0` wheel and a local Ollama model served through the
+OpenAI-compatible API. Installing Hermes installs Relay without a Rust
+toolchain or Git checkout.
 
 ```bash
-pip install "nemo-relay==0.3"
+pip install -e .
 
 export HERMES_HOME=/tmp/hermes-nemo-relay-docs/hermes-home
 mkdir -p "$HERMES_HOME"
@@ -209,9 +239,6 @@ model:
   default: qwen3.6:35b
   base_url: http://127.0.0.1:11434/v1
   api_key: ollama
-plugins:
-  enabled:
-    - observability/nemo_relay
 delegation:
   max_spawn_depth: 2
   max_concurrent_children: 2
@@ -444,9 +471,8 @@ for the same execution.
 
 This example enables both NeMo Relay observability export and adaptive execution
 middleware for a local Hermes run. This path requires a NeMo Relay runtime that
-supports `[components.config.tool_parallelism]`; the `nemo-relay==0.3`
-install used by the earlier observability-only examples does not support this
-adaptive config.
+supports `[components.config.tool_parallelism]`. Use the Relay version pinned
+by this Hermes checkout so its component schema stays compatible.
 
 ```bash
 export HERMES_HOME=/tmp/hermes-middleware-test/hermes-home

@@ -516,6 +516,25 @@ export interface AnalyticsResponse {
     top_skills: AnalyticsSkillEntry[]
   }
   totals: AnalyticsTotals
+  telemetry?: {
+    available?: boolean
+    run_count?: number
+    model_calls?: number
+    tool_calls?: number
+    tool_failures?: number
+    totals?: AnalyticsTotals
+    daily?: AnalyticsDailyEntry[]
+    by_model?: AnalyticsModelEntry[]
+    health?: {
+      health?: string
+      consent_state?: string
+      retention_days?: number
+      redaction?: string
+      content_capture?: boolean
+      relay_dependency?: { available?: boolean; version?: string }
+      projection_error?: null | string
+    }
+  }
 }
 
 export interface AnalyticsSkillEntry {

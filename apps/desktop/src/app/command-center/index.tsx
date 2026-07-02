@@ -471,9 +471,13 @@ interface UsagePanelProps {
 function UsagePanel({ error, loading, onRefresh, period, usage }: UsagePanelProps) {
   const { t } = useI18n()
   const cc = t.commandCenter
-  const daily = useMemo(() => usage?.daily ?? [], [usage])
-  const totals = usage?.totals
-  const byModel = usage?.by_model ?? []
+  const relayHealthy = usage?.telemetry?.available === true
+  const daily = useMemo(
+    () => (relayHealthy && usage?.telemetry?.daily ? usage.telemetry.daily : (usage?.daily ?? [])),
+    [relayHealthy, usage],
+  )
+  const totals = relayHealthy && usage?.telemetry?.totals ? usage.telemetry.totals : usage?.totals
+  const byModel = relayHealthy && usage?.telemetry?.by_model ? usage.telemetry.by_model : (usage?.by_model ?? [])
   const topSkills = usage?.skills?.top_skills ?? []
 
   const maxTokens = useMemo(() => {
@@ -509,6 +513,17 @@ function UsagePanel({ error, loading, onRefresh, period, usage }: UsagePanelProp
         <span className="inline-flex items-center gap-1 text-[length:var(--conversation-caption-font-size)] text-destructive">
           <AlertCircle className="size-3.5" />
           {error}
+        </span>
+      )}
+
+      <span className="text-[0.65rem] text-(--ui-text-tertiary)">
+        {relayHealthy
+          ? `Relay-backed analytics · ${formatInteger(usage?.telemetry?.model_calls)} model calls · ${formatInteger(usage?.telemetry?.tool_calls)} tool calls`
+          : 'Relay telemetry unavailable · showing legacy session estimates'}
+      </span>
+      {relayHealthy && (
+        <span className="text-[0.625rem] text-(--ui-text-tertiary)">
+          {`Structural local · content ${usage?.telemetry?.health?.content_capture ? 'enabled' : 'disabled'} · ${usage?.telemetry?.health?.redaction ?? 'pii'} redaction · ${usage?.telemetry?.health?.retention_days ?? 90}d retention · consent ${usage?.telemetry?.health?.consent_state ?? 'unknown'}`}
         </span>
       )}
 

@@ -11889,6 +11889,16 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
             },
             "top_skills": [],
         })
+        try:
+            from hermes_cli.telemetry import summarize_telemetry, telemetry_status
+
+            telemetry = summarize_telemetry(
+                cutoff=cutoff,
+                db_path=db.db_path.parent / "telemetry" / "telemetry.db",
+            )
+            telemetry["health"] = telemetry_status()
+        except Exception as exc:
+            telemetry = {"available": False, "run_count": 0, "error": f"{type(exc).__name__}: {exc}"}
 
         return {
             "daily": daily,
@@ -11896,6 +11906,7 @@ async def get_usage_analytics(days: int = 30, profile: Optional[str] = None):
             "totals": totals,
             "period_days": days,
             "skills": skills,
+            "telemetry": telemetry,
         }
     finally:
         db.close()

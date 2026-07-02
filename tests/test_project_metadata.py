@@ -222,10 +222,14 @@ def test_feishu_extra_includes_qrcode_for_qr_login():
     assert any(dep.startswith("qrcode") for dep in feishu_extra)
 
 
-def test_nemo_relay_extra_uses_official_0_3_distribution():
+def test_nemo_relay_is_a_required_official_wheel_dependency():
     optional_dependencies = _load_optional_dependencies()
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        dependencies = tomllib.load(handle)["project"]["dependencies"]
 
-    assert optional_dependencies["nemo-relay"] == ["nemo-relay==0.3"]
+    assert "nemo-relay==0.4.0" in dependencies
+    assert optional_dependencies["nemo-relay"] == []
     assert not any(
         spec == "hermes-agent[nemo-relay]"
         for spec in optional_dependencies["all"]

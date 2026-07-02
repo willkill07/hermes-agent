@@ -9386,7 +9386,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         which would otherwise early-return before any credits showed.
         """
         if not self.agent:
-            if not self._print_nous_credits_block():
+            relay_printed = self._print_relay_usage(getattr(self, "session_id", None))
+            if not self._print_nous_credits_block() and not relay_printed:
                 print("(._.) No active agent -- send a message first.")
             return
 
@@ -9394,7 +9395,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         calls = agent.session_api_calls
 
         if calls == 0:
-            if not self._print_nous_credits_block():
+            relay_printed = self._print_relay_usage(getattr(agent, "session_id", None))
+            if not self._print_nous_credits_block() and not relay_printed:
                 print("(._.) No API calls made yet in this session.")
             return
 
@@ -9466,6 +9468,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         # Nous credits magnitudes + monthly-grant gauge (agent-independent — also
         # runs at the no-agent / no-calls early-returns above). See the helper.
         self._print_nous_credits_block()
+        self._print_relay_usage(getattr(agent, "session_id", None))
 
         if self.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
@@ -9480,6 +9483,20 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             # into stream-retry events, credential rotations, etc.
             # Console quietness is enforced by hermes_logging not
             # installing a console StreamHandler in non-verbose mode.
+
+    def _print_relay_usage(self, session_id: str | None) -> bool:
+        try:
+            from hermes_cli.telemetry import session_usage_lines
+
+            lines = session_usage_lines(session_id)
+        except Exception:
+            lines = []
+        if not lines:
+            return False
+        print()
+        for line in lines:
+            print(f"  {line}")
+        return True
 
     def _print_nous_credits_block(self) -> bool:
         """Print the Nous credits magnitudes + monthly-grant gauge when a Nous account

@@ -3860,6 +3860,17 @@ class GatewaySlashCommandsMixin:
             credits_lines = await asyncio.to_thread(nous_credits_lines, markdown=True)
         except Exception:
             credits_lines = []  # fail-open: never break /usage
+        try:
+            from hermes_cli.telemetry import session_usage_lines
+
+            _entry_for_relay = self.session_store.get_or_create_session(source)
+            relay_lines = await asyncio.to_thread(
+                session_usage_lines, _entry_for_relay.session_id, markdown=True
+            )
+        except Exception:
+            relay_lines = []
+        if relay_lines:
+            credits_lines = relay_lines + ([""] if credits_lines else []) + credits_lines
 
         if agent and hasattr(agent, "session_total_tokens") and agent.session_api_calls > 0:
             lines = []

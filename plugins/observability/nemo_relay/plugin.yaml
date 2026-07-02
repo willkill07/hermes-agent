@@ -1,8 +1,11 @@
 name: nemo_relay
 version: "0.1.0"
-description: "Optional NeMo Relay observability for Hermes. Opt in with `hermes plugins enable observability/nemo_relay`; HERMES_NEMO_RELAY_* env vars configure exports after the plugin is enabled."
+description: "NeMo Relay local observability for Hermes. Structural collection is enabled by default; content and network exports remain opt-in."
 author: NousResearch
+default_enabled: true
 hooks:
+  - on_run_start
+  - on_run_end
   - on_session_start
   - on_session_end
   - on_session_finalize

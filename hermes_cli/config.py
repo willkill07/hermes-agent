@@ -898,6 +898,37 @@ DEFAULT_CONFIG = {
     "fallback_providers": [],
     "credential_pool_strategies": {},
     "toolsets": ["hermes-cli"],
+    # Local NeMo Relay observability. Content capture and network exporters
+    # remain disabled until explicitly enabled.
+    "telemetry": {
+        "local": True,
+        "allow_aggregate": False,
+        "consent_state": "unknown",
+        "install_id": "",
+        "retention_days": 90,
+        "capture_content": False,
+        "content_redaction": "pii",
+        "trajectories": {"enabled": False},
+        "plugins_toml": None,
+        "atof": {
+            "enabled": True,
+            "output_directory": None,
+            "filename": "hermes-atof.jsonl",
+            # Hermes expands this template before constructing Relay's existing
+            # single-file ATOF exporter; it is not a Relay configuration field.
+            "filename_template": "hermes-atof-{date}.jsonl",
+            "mode": "append",
+        },
+        "atif": {
+            "enabled": False,
+            "output_directory": None,
+            "filename_template": "hermes-atif-{session_id}.json",
+        },
+        "export": {
+            "otlp": {"enabled": False, "endpoint": None, "headers_env": {}},
+            "openinference": {"enabled": False, "endpoint": None, "headers_env": {}},
+        },
+    },
     # Global active chat session cap across CLI, TUI/dashboard, and messaging.
     # None/0 = unbounded.
     "max_concurrent_sessions": None,
@@ -4846,6 +4877,36 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
             return [ConfigIssue("error", "Could not load config.yaml", "Run 'hermes setup' to create a valid config")]
 
     issues: List[ConfigIssue] = []
+
+    telemetry = config.get("telemetry")
+    if telemetry is not None and not isinstance(telemetry, dict):
+        issues.append(ConfigIssue(
+            "error",
+            f"telemetry should be a dict, got {type(telemetry).__name__}",
+            "Use a YAML mapping with local, retention_days, consent_state, and content_redaction fields",
+        ))
+    elif isinstance(telemetry, dict):
+        redaction = telemetry.get("content_redaction", "pii")
+        if redaction not in {"pii", "secrets"}:
+            issues.append(ConfigIssue(
+                "error",
+                f"telemetry.content_redaction must be 'pii' or 'secrets', got {redaction!r}",
+                "Use 'pii' (recommended) or 'secrets' for the advanced PII opt-out",
+            ))
+        consent = telemetry.get("consent_state", "unknown")
+        if consent not in {"unknown", "granted", "denied"}:
+            issues.append(ConfigIssue(
+                "error",
+                f"telemetry.consent_state must be unknown, granted, or denied, got {consent!r}",
+                "Run 'hermes telemetry consent status|grant|deny' instead of editing this value manually",
+            ))
+        retention = telemetry.get("retention_days", 90)
+        if isinstance(retention, bool) or not isinstance(retention, int) or retention <= 0:
+            issues.append(ConfigIssue(
+                "error",
+                f"telemetry.retention_days must be a positive integer, got {retention!r}",
+                "Set the number of UTC calendar days to retain, for example 90",
+            ))
 
     # ── custom_providers must be a list, not a dict ──────────────────────
     cp = config.get("custom_providers")

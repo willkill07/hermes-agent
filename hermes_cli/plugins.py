@@ -161,6 +161,8 @@ VALID_HOOKS: Set[str] = {
     "on_session_end",
     "on_session_finalize",
     "on_session_reset",
+    "on_run_start",
+    "on_run_end",
     "subagent_start",
     "subagent_stop",
     # Gateway pre-dispatch hook. Fired once per incoming MessageEvent
@@ -310,6 +312,9 @@ class PluginManifest:
     # category plugin at ``plugins/image_gen/openai/`` the key is
     # ``image_gen/openai``. When empty, falls back to ``name``.
     key: str = ""
+    # Trusted bundled plugins may opt into loading on fresh installs. This flag
+    # is ignored for user, project, and entry-point plugins.
+    default_enabled: bool = False
 
 
 @dataclass
@@ -1402,6 +1407,10 @@ class PluginManager:
                 self._register_deferred_platform(manifest)
                 continue
 
+            if manifest.source == "bundled" and manifest.default_enabled:
+                self._load_plugin(manifest)
+                continue
+
             # Everything else (standalone, user-installed backends,
             # entry-point plugins) is opt-in via plugins.enabled.
             # Accept both the path-derived key and the legacy bare name
@@ -1599,6 +1608,7 @@ class PluginManager:
                 path=str(plugin_dir),
                 kind=kind,
                 key=key,
+                default_enabled=bool(data.get("default_enabled", False)),
             )
         except Exception as exc:
             logger.warning(

@@ -185,6 +185,8 @@ def test_manifest_fields():
     data = yaml.safe_load((PLUGIN_DIR / "plugin.yaml").read_text())
     assert data["name"] == "nemo_relay"
     assert set(data["hooks"]) == {
+        "on_run_start",
+        "on_run_end",
         "on_session_start",
         "on_session_end",
         "on_session_finalize",
@@ -212,6 +214,39 @@ def test_nemo_relay_plugin_is_discoverable_as_bundled_plugin(tmp_path, monkeypat
     loaded = manager._plugins["observability/nemo_relay"]
     assert loaded.manifest.name == "nemo_relay"
     assert loaded.manifest.source == "bundled"
+    assert loaded.enabled
+
+
+def test_nemo_relay_explicit_disable_wins_over_bundled_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+    monkeypatch.setattr(
+        "hermes_cli.plugins._get_disabled_plugins",
+        lambda: {"observability/nemo_relay"},
+    )
+
+    manager = PluginManager()
+    manager.discover_and_load()
+
+    loaded = manager._plugins["observability/nemo_relay"]
+    assert not loaded.enabled
+    assert loaded.error == "disabled via config"
+
+
+def test_user_plugin_cannot_claim_default_enabled(tmp_path, monkeypatch):
+    home = tmp_path / "hermes_test"
+    plugin_dir = home / "plugins" / "untrusted-default"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "plugin.yaml").write_text(
+        "name: untrusted-default\nversion: 1.0.0\nkind: standalone\nentry: plugin.py\ndefault_enabled: true\n",
+        encoding="utf-8",
+    )
+    (plugin_dir / "plugin.py").write_text("def register(ctx):\n    raise AssertionError('must not load')\n", encoding="utf-8")
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    manager = PluginManager()
+    manager.discover_and_load()
+
+    loaded = manager._plugins["untrusted-default"]
     assert not loaded.enabled
 
 
@@ -294,9 +329,48 @@ def test_nemo_relay_plugin_closes_api_span_on_error(monkeypatch):
 
     call_end = next(event for event in fake.events if event[0] == "llm.call_end")
     assert call_end[1] == ("llm", "openai")
-    assert call_end[2] == {"error": {"type": "RateLimitError", "message": "rate limited"}}
+    assert call_end[2] == {"error_type": "dict"}
     assert call_end[3]["data"]["reason"] == "rate_limit"
     assert not plugin._get_runtime().sessions["s1"].llm_spans
+
+
+def test_subagent_goal_never_enters_structural_lifecycle_event(monkeypatch):
+    fake = _FakeNemoRelay()
+    plugin = _fresh_plugin(monkeypatch, fake)
+
+    plugin.on_subagent_start(
+        parent_session_id="parent",
+        child_session_id="child",
+        child_goal="email alice@example.com and use sk-secret",
+        child_role="researcher",
+    )
+
+    start = next(event for event in fake.events if event[0] == "scope.event" and event[1] == "hermes.subagent.start")
+    assert "child_goal" not in start[2]["data"]
+    assert "alice@example.com" not in json.dumps(start)
+
+
+@pytest.mark.parametrize("result", [{"error": "boom"}, '{"error":"boom"}'])
+def test_tool_result_error_objects_are_classified_as_failures(monkeypatch, result):
+    fake = _FakeNemoRelay()
+    plugin = _fresh_plugin(monkeypatch, fake)
+
+    payload = plugin._get_runtime()._sanitize_tool_response("demo", result)
+
+    assert payload["status"] == "error"
+    assert payload["error_type"] == "tool_error"
+
+
+def test_run_scope_parents_runtime_calls(monkeypatch):
+    fake = _FakeNemoRelay()
+    plugin = _fresh_plugin(monkeypatch, fake)
+
+    plugin.on_run_start(run_id="run-1", session_id="s1", entrypoint="cli")
+    plugin.on_pre_tool_call(run_id="run-1", session_id="s1", tool_name="read_file", tool_call_id="t1", args={})
+    plugin.on_run_end(run_id="run-1", session_id="s1", completed=True, outcome="completed")
+
+    tool = next(event for event in fake.events if event[0] == "tool.call")
+    assert tool[3]["handle"] == ("scope", "hermes.run:run-1")
 
 
 def test_nemo_relay_plugin_emits_approval_marks(monkeypatch):

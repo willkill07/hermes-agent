@@ -415,15 +415,19 @@ export default function AnalyticsPage() {
   const [showTokens, setShowTokens] = useState<boolean | null>(null);
   const { t } = useI18n();
   const { setAfterTitle, setEnd } = usePageHeader();
+  const relayHealthy = data?.telemetry?.available === true;
+  const effectiveTotals = relayHealthy && data?.telemetry?.totals
+    ? data.telemetry.totals
+    : data?.totals;
+  const effectiveDaily = relayHealthy && data?.telemetry?.daily
+    ? data.telemetry.daily
+    : (data?.daily ?? []);
+  const effectiveModels = relayHealthy && data?.telemetry?.by_model
+    ? data.telemetry.by_model
+    : (data?.by_model ?? []);
 
   useEffect(() => {
-    api
-      .getConfig()
-      .then((cfg) => {
-        const dash = (cfg?.dashboard ?? {}) as { show_token_analytics?: unknown };
-        setShowTokens(dash.show_token_analytics === true);
-      })
-      .catch(() => setShowTokens(false));
+    setShowTokens(true);
   }, []);
 
   const load = useCallback(() => {
@@ -538,6 +542,25 @@ export default function AnalyticsPage() {
 
       {showTokens && data && (
         <>
+          <Card>
+            <CardContent className="py-4 text-sm text-muted-foreground">
+              {data.telemetry?.available ? (
+                <div className="flex flex-col gap-1">
+                  <span>
+                    Relay-backed analytics: {data.telemetry.run_count ?? 0} runs, {data.telemetry.model_calls ?? 0} model calls,
+                    {" "}{data.telemetry.tool_calls ?? 0} tool calls, {data.telemetry.tool_failures ?? 0} tool failures.
+                  </span>
+                  <span className="text-xs text-text-tertiary">
+                    Collection: structural local · Content: {data.telemetry.health?.content_capture ? "enabled" : "disabled"} ·
+                    {" "}Redaction: {data.telemetry.health?.redaction ?? "pii"} · Retention: {data.telemetry.health?.retention_days ?? 90} days ·
+                    {" "}Consent: {data.telemetry.health?.consent_state ?? "unknown"}
+                  </span>
+                </div>
+              ) : (
+                <span>Relay telemetry is unavailable; legacy session estimates are shown.</span>
+              )}
+            </CardContent>
+          </Card>
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardContent className="py-6">
@@ -546,26 +569,26 @@ export default function AnalyticsPage() {
                     {
                       label: t.analytics.totalTokens,
                       value: formatTokens(
-                        data.totals.total_input + data.totals.total_output,
+                        (effectiveTotals?.total_input ?? 0) + (effectiveTotals?.total_output ?? 0),
                       ),
                     },
                     {
                       label: t.analytics.input,
-                      value: formatTokens(data.totals.total_input),
+                      value: formatTokens(effectiveTotals?.total_input ?? 0),
                     },
                     {
                       label: t.analytics.output,
-                      value: formatTokens(data.totals.total_output),
+                      value: formatTokens(effectiveTotals?.total_output ?? 0),
                     },
                     {
                       label: t.analytics.totalSessions,
-                      value: `${data.totals.total_sessions} (~${(data.totals.total_sessions / days).toFixed(1)}${t.analytics.perDayAvg})`,
+                      value: `${effectiveTotals?.total_sessions ?? 0} (~${((effectiveTotals?.total_sessions ?? 0) / days).toFixed(1)}${t.analytics.perDayAvg})`,
                     },
                     {
                       label: t.analytics.apiCalls,
                       value: String(
-                        data.totals.total_api_calls ??
-                          data.daily.reduce((sum, d) => sum + d.sessions, 0),
+                        effectiveTotals?.total_api_calls ??
+                          effectiveDaily.reduce((sum, d) => sum + d.sessions, 0),
                       ),
                     },
                   ]}
@@ -573,18 +596,18 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
 
-            <TokenBarChart daily={data.daily} />
+            <TokenBarChart daily={effectiveDaily} />
           </div>
 
-          <DailyTable daily={data.daily} />
-          <ModelTable models={data.by_model} />
+          <DailyTable daily={effectiveDaily} />
+          <ModelTable models={effectiveModels} />
           <SkillTable skills={data.skills.top_skills} />
         </>
       )}
 
       {data &&
-        data.daily.length === 0 &&
-        data.by_model.length === 0 &&
+        effectiveDaily.length === 0 &&
+        effectiveModels.length === 0 &&
         data.skills.top_skills.length === 0 && (
           <Card>
             <CardContent className="py-12">
